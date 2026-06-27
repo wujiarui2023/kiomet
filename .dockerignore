@@ -1,32 +1,5 @@
-# Rust 构建缓存
-target/
-**/target/
-
-# 前端构建产物
-client/dist/
-client/pkg/
-
-# 版本控制
-.git/
-.gitignore
-.gitmodules
-.github/
-
-# 编辑器
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# 系统文件
-.DS_Store
-Thumbs.db
-
-# 文档
+target
+.git
+.github
 *.md
-*.txt
 LICENSE
-
-# 其他
-makefiles/
-*.log
