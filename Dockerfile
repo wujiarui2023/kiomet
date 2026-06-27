@@ -1,52 +1,55 @@
-# Kiomet 游戏 Docker 部署文件
-# 多阶段构建：前端 + 后端
+# 用 Rust Nightly 镜像
+FROM rustlang/rust:nightly AS builder
 
-# ==================== 阶段 1：构建前端 ====================
-FROM rust:nightly AS client-builder
-
-WORKDIR /app
-
-# 安装 trunk（WebAssembly 打包工具）
+# 安装 trunk（编译前端用）
 RUN cargo install --locked trunk --version 0.17.5
 
-# 复制项目文件
-COPY . .
+# 添加 WebAssembly 目标
+RUN rustup target add wasm32-unknown-unknown
 
-# 编译前端（release 模式）
-WORKDIR /app/client
-RUN trunk build --release
-
-# ==================== 阶段 2：构建后端 ====================
-FROM rust:nightly AS server-builder
-
+# 设置工作目录
 WORKDIR /app
 
-# 复制整个项目
+# 先复制 Cargo.toml 缓存依赖
+COPY Cargo.toml Cargo.lock ./
+COPY client/Cargo.toml client/Cargo.toml
+COPY server/Cargo.toml server/Cargo.toml
+COPY common/Cargo.toml common/Cargo.toml
+COPY macros/Cargo.toml macros/Cargo.toml
+
+# 创建空的 src 目录来缓存依赖
+RUN mkdir -p client/src server/src common/src macros/src \
+    && echo "fn main() {}" > client/src/main.rs \
+    && echo "fn main() {}" > server/src/main.rs \
+    && echo "" > common/src/lib.rs \
+    && echo "" > macros/src/lib.rs
+
+# 缓存依赖构建
+RUN cargo build --release -p server || true
+
+# 复制全部源码
 COPY . .
 
-# 从前一阶段复制编译好的前端文件
-COPY --from=client-builder /app/client/dist ./client/dist
+# 编译前端
+RUN cd client && trunk build --release
 
-# 编译后端（release 模式）
-WORKDIR /app/server
-RUN cargo build --release
+# 编译服务端
+RUN cargo build --release -p server
 
-# ==================== 阶段 3：运行时镜像 ====================
+# 运行阶段
 FROM debian:bookworm-slim
 
-# 安装必要的运行时依赖
+# 安装必要的运行时库
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# 复制编译好的服务端
+COPY --from=builder /app/target/release/server /usr/local/bin/server
 
-# 从构建阶段复制编译好的后端二进制
-COPY --from=server-builder /app/server/target/release/server .
-
-# 暴露端口（Render 会自动通过 PORT 环境变量分配）
+# 暴露端口（kodiak 默认端口，根据实际情况调整）
 EXPOSE 8080
 
 # 启动命令
-CMD ["./server"]
+CMD ["server"]
